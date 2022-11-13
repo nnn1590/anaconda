@@ -1,8 +1,11 @@
 package anaconda
 
 import (
+	"bytes"
 	"net/url"
+	"net/http"
 	"strconv"
+	"encoding/json"
 )
 
 type Media struct {
@@ -34,6 +37,15 @@ type VideoMedia struct {
 	Size             int    `json:"size"`
 	ExpiresAfterSecs int    `json:"expires_after_secs"`
 	Video            Video  `json:"video"`
+}
+
+type AltText struct {
+	Text string `json:"text"`
+}
+
+type MediaMetadata struct {
+	MediaID string  `json:"media_id"`
+	AltText AltText `json:"alt_text"`
 }
 
 func (a TwitterApi) UploadMedia(base64String string) (media Media, err error) {
@@ -86,4 +98,23 @@ func (a TwitterApi) UploadVideoFinalize(mediaIdString string) (videoMedia VideoM
 	response_ch := make(chan response)
 	a.queryQueue <- query{UploadBaseUrl + "/media/upload.json", v, &mediaResponse, _POST, response_ch}
 	return mediaResponse, (<-response_ch).err
+}
+
+func (a TwitterApi) CreateMediaMetadata(mediaIdString string, altText string) error {
+	data := MediaMetadata{mediaIdString, AltText{altText}}
+	json, err := json.Marshal(data)
+	req, err := http.NewRequest("POST", UploadBaseUrl + "/media/metadata/create.json", bytes.NewBuffer(json))
+	if err != nil {
+		return err
+	}
+	err = a.oauthClient.SetAuthorizationHeader(req.Header, a.Credentials, req.Method, req.URL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	resp, err := a.HttpClient.Do(req)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return newApiError(resp)
+	}
+	return err
 }
